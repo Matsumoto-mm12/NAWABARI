@@ -1,0 +1,59 @@
+
+{ "scriptFile": "__init__.py",
+  "bindings": [{
+      "authLevel": "anonymous",
+      "type": "httpTrigger",
+      "direction": "in",
+      "name": "req",
+      "methods": ["get"],
+      "route": "resourcegroups"
+    },{
+      "type": "http",
+      "direction": "out",
+      "name": "$return"
+}]}
+
+async def main(req: func.HttpRequest) -> func.HttpResponse: """
+    The main entry point to the function.
+    """
+
+    if "MSI_ENDPOINT" in os.environ:
+        credentials = MSIAuthentication()
+    else:
+        credentials, *_ = get_azure_cli_credentials()
+
+    subscription_id = os.environ.get(
+        'AZURE_SUBSCRIPTION_ID', '11111111-1111-1111-1111-111111111111')
+
+    list_of_rgs = await list_rgs(credentials, subscription_id)
+
+    return func.HttpResponse(list_of_rgs, mimetype="application/json")
+
+def process_rg_instance(group): """
+    Get the relevant pieces of information from a ResourceGroup instance.
+    """
+    return {
+  "Name": group.name,
+  "Id": group.id,
+  "Location": group.location,
+  "Tags": group.tags,
+  "Properties": group.properties.provisioning_state if group.properties and group.properties.provisioning_state else None
+}
+
+
+async def list_rgs(credentials, subscription_id): """
+    Get list of resource groups for the subscription id passed.
+    """
+    list_of_resource_groups = []
+
+    with ResourceManagementClient(credentials, subscription_id) as rg_client:
+        try:
+            for i in rg_client.resource_groups.list():
+                list_of_resource_groups.append(process_rg_instance(i))
+
+        except Exception as e:
+            logging.error("encountered: {0}".format(str(e)))
+
+    return json.dumps(list_of_resource_groups)
+
+
